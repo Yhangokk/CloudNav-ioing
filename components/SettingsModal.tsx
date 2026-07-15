@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, LayoutTemplate, Info, Download, Sidebar, Keyboard, MousePointerClick, AlertTriangle, Package, Zap, Menu, Upload } from 'lucide-react';
+import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, LayoutTemplate, Info, Download, Sidebar, Keyboard, MousePointerClick, AlertTriangle, Package, Zap, Menu, Upload, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import { generateLinkDescription } from '../services/geminiService';
 import JSZip from 'jszip';
@@ -14,11 +14,14 @@ interface SettingsModalProps {
   categories: Category[];
   onUpdateLinks: (links: LinkItem[]) => void;
   authToken: string | null;
+  onManualSync: () => Promise<boolean>;
+  syncStatus: 'idle' | 'saving' | 'saved' | 'error' | 'offline';
+  onSiteSettingsChange?: (siteSettings: SiteSettings) => void;
 }
 
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
-    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken 
+    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken, onManualSync, syncStatus, onSiteSettingsChange 
 }) => {
   const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools'>('site');
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
@@ -29,7 +32,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       favicon: siteSettings?.favicon || '',
       cardStyle: siteSettings?.cardStyle || 'detailed',
       requirePasswordOnVisit: siteSettings?.requirePasswordOnVisit ?? false,
-      passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
+      passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7,
+      cloudSyncEnabled: siteSettings?.cloudSyncEnabled ?? true
   }));
   
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,7 +47,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const faviconUploadRef = useRef<HTMLInputElement>(null);
   
   const [copiedStates, setCopiedStates] = useState<{[key: string]: boolean}>({});
-
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   useEffect(() => {
     if (isOpen) {
       setLocalConfig(config);
@@ -53,7 +57,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           favicon: siteSettings?.favicon || '',
           cardStyle: siteSettings?.cardStyle || 'detailed',
           requirePasswordOnVisit: siteSettings?.requirePasswordOnVisit ?? false,
-          passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
+          passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7,
+          cloudSyncEnabled: siteSettings?.cloudSyncEnabled ?? true
       };
       setLocalSiteSettings(safeSettings);
 
@@ -75,9 +80,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setLocalSiteSettings(prev => {
         const next = { ...prev, [key]: value };
         
-        // 如果是身份验证过期天数修改，立即保存到 KV 空间
-        if (key === 'passwordExpiryDays' && authToken) {
+        // 如果是身份验证过期天数或云同步开关修改，立即保存到 KV 空间
+        // 并即时通知父组件更新 siteSettings 状态（无需等点击"保存更改"按钮）
+        if ((key === 'passwordExpiryDays' || key === 'cloudSyncEnabled') && authToken) {
             saveWebsiteConfigToKV(next);
+            if (onSiteSettingsChange) {
+                onSiteSettingsChange(next);
+            }
         }
         
         return next;
@@ -112,6 +121,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSave = () => {
     onSave(localConfig, localSiteSettings);
     onClose();
+  };
+
+  const handleManualSyncClick = async () => {
+    if (!authToken) {
+      alert('请先登录后再手动同步');
+      return;
+    }
+    setIsManualSyncing(true);
+    try {
+      const success = await onManualSync();
+      if (success) {
+        alert('手动同步成功！本地数据已推送到云端。');
+      } else {
+        alert('同步失败，请检查网络或重新登录后再试。');
+      }
+    } catch (e) {
+      alert('同步出错：' + (e instanceof Error ? e.message : '未知错误'));
+    } finally {
+      setIsManualSyncing(false);
+    }
   };
 
   const handleBulkGenerate = async () => {
@@ -1249,6 +1278,66 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     />
                                 </div>
                                 <p className="text-xs text-slate-500 mt-1">设置为 0 表示永久不退出，默认 7 天后自动退出</p>
+                            </div>
+                            <div>
+                                <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-4 py-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                            {localSiteSettings.cloudSyncEnabled ? <Cloud size={14} className="inline mr-1 text-blue-500" /> : <CloudOff size={14} className="inline mr-1 text-slate-400" />}
+                                            云端自动同步
+                                        </label>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            {localSiteSettings.cloudSyncEnabled 
+                                                ? '开启后，每次修改数据都会自动同步到 Cloudflare KV 云端。'
+                                                : '已关闭自动同步，修改数据仅保存在本地浏览器。如需同步请手动点击下方按钮。'
+                                            }
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSiteChange('cloudSyncEnabled', !localSiteSettings.cloudSyncEnabled)}
+                                        className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-all duration-200 ${
+                                            localSiteSettings.cloudSyncEnabled
+                                              ? 'border-blue-500 bg-blue-600 shadow-[0_0_0_4px_rgba(59,130,246,0.12)]'
+                                              : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800'
+                                        }`}
+                                        aria-pressed={localSiteSettings.cloudSyncEnabled}
+                                    >
+                                        <span
+                                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                                                localSiteSettings.cloudSyncEnabled ? 'translate-x-7' : 'translate-x-1'
+                                            }`}
+                                        >
+                                            <span className={`h-2.5 w-2.5 rounded-full ${localSiteSettings.cloudSyncEnabled ? 'bg-blue-600' : 'bg-slate-400'}`} />
+                                        </span>
+                                    </button>
+                                </div>
+                                {!localSiteSettings.cloudSyncEnabled && authToken && (
+                                    <div className="mt-3 flex items-center gap-3">
+                                        <button
+                                            onClick={handleManualSyncClick}
+                                            disabled={isManualSyncing}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                isManualSyncing
+                                                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
+                                                    : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800'
+                                            }`}
+                                        >
+                                            <RefreshCw size={16} className={isManualSyncing ? 'animate-spin' : ''} />
+                                            {isManualSyncing ? '同步中...' : '手动同步到云端'}
+                                        </button>
+                                        {syncStatus === 'saved' && (
+                                            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                                <Check size={12} /> 同步成功
+                                            </span>
+                                        )}
+                                        {syncStatus === 'error' && (
+                                            <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                                                <AlertTriangle size={12} /> 同步失败
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
