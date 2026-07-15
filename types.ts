@@ -25,6 +25,7 @@ export interface SiteSettings {
   cardStyle: 'detailed' | 'simple';
   requirePasswordOnVisit: boolean;
   passwordExpiryDays: number; // 密码过期天数，0表示永久不退出
+  cloudSyncEnabled: boolean; // 云同步开关，true为自动同步，false为仅本地保存
 }
 
 export interface AppState {
