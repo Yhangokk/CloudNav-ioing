@@ -153,7 +153,8 @@ function App() {
           favicon: '',
           cardStyle: 'detailed' as const,
           requirePasswordOnVisit: false,
-          passwordExpiryDays: 7
+          passwordExpiryDays: 7,
+          cloudSyncEnabled: true
       };
   });
   
@@ -358,10 +359,19 @@ function App() {
       // 2. Save to Local Cache
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
 
-      // 3. Sync to Cloud (if authenticated)
-      if (authToken) {
+      // 3. Sync to Cloud (if authenticated AND cloud sync is enabled)
+      if (authToken && siteSettings.cloudSyncEnabled) {
           syncToCloud(newLinks, newCategories, authToken);
       }
+  };
+
+  // 手动同步：将当前本地数据强制推送到云端（不受 cloudSyncEnabled 开关限制）
+  const handleManualSync = async (): Promise<boolean> => {
+      if (!authToken) {
+          setIsAuthOpen(true);
+          return false;
+      }
+      return syncToCloud(links, categories, authToken);
   };
 
   const requireAuth = () => {
@@ -551,7 +561,9 @@ function App() {
       if (hasChanges) {
         setLinks(updatedLinks);
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: updatedLinks, categories: categoriesToUse }));
-        syncToCloud(updatedLinks, categoriesToUse, authToken);
+        if (siteSettings.cloudSyncEnabled) {
+          syncToCloud(updatedLinks, categoriesToUse, authToken);
+        }
       }
     }
   };
@@ -713,7 +725,8 @@ function App() {
                         favicon: websiteConfigData.favicon || prev.favicon,
                         cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
                         requirePasswordOnVisit: websiteConfigData.requirePasswordOnVisit !== undefined ? websiteConfigData.requirePasswordOnVisit : prev.requirePasswordOnVisit,
-                        passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
+                        passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays,
+                        cloudSyncEnabled: websiteConfigData.cloudSyncEnabled !== undefined ? websiteConfigData.cloudSyncEnabled : prev.cloudSyncEnabled
                     }));
                 }
             }
@@ -1026,7 +1039,8 @@ function App() {
                             favicon: websiteConfigData.favicon || prev.favicon,
                             cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
                             requirePasswordOnVisit: websiteConfigData.requirePasswordOnVisit !== undefined ? websiteConfigData.requirePasswordOnVisit : prev.requirePasswordOnVisit,
-                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
+                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays,
+                            cloudSyncEnabled: websiteConfigData.cloudSyncEnabled !== undefined ? websiteConfigData.cloudSyncEnabled : prev.cloudSyncEnabled
                         }));
                     }
                 }
@@ -2301,6 +2315,12 @@ function App() {
         categories={categories}
         onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
         authToken={authToken}
+        onManualSync={handleManualSync}
+        syncStatus={syncStatus}
+        onSiteSettingsChange={(newSettings) => {
+          setSiteSettings(newSettings);
+          localStorage.setItem('cloudnav_site_settings', JSON.stringify(newSettings));
+        }}
       />
 
       <SearchConfigModal
