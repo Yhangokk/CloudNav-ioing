@@ -40,7 +40,7 @@ import QRCodeModal from './components/QRCodeModal';
 
 // --- 配置项 ---
 // 项目核心仓库地址
-const GITHUB_REPO_URL = 'https://github.com/Aaowu/CloudNav-Oorz';
+const GITHUB_REPO_URL = 'https://github.com/Yhangokk/CloudNav-ioing';
 
 const LOCAL_STORAGE_KEY = 'cloudnav_data_cache';
 const AUTH_KEY = 'cloudnav_auth_token';
@@ -2318,8 +2318,14 @@ function App() {
         onManualSync={handleManualSync}
         syncStatus={syncStatus}
         onSiteSettingsChange={(newSettings) => {
+          const wasDisabled = !siteSettings.cloudSyncEnabled;
+          const nowEnabled = newSettings.cloudSyncEnabled;
           setSiteSettings(newSettings);
           localStorage.setItem('cloudnav_site_settings', JSON.stringify(newSettings));
+          // 从关闭切换到开启时，自动触发一次同步，把本地积攒的数据推到云端
+          if (wasDisabled && nowEnabled && authToken) {
+            syncToCloud(links, categories, authToken);
+          }
         }}
       />
 
@@ -2442,7 +2448,11 @@ function App() {
                  {syncStatus === 'saving' && <Loader2 className="animate-spin w-3 h-3 text-blue-500" />}
                  {syncStatus === 'saved' && <CheckCircle2 className="w-3 h-3 text-green-500" />}
                  {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-red-500" />}
-                 {authToken ? <span className="text-green-600">已同步</span> : <span className="text-amber-500">离线</span>}
+                 {authToken ? (
+                   siteSettings.cloudSyncEnabled
+                     ? <span className="text-green-600">已同步</span>
+                     : <span className="text-slate-400">同步关闭</span>
+                 ) : <span className="text-amber-500">离线</span>}
                </div>
 
                <a 
@@ -2453,7 +2463,7 @@ function App() {
                  title="Fork this project on GitHub"
                >
                  <GitFork size={14} />
-                 <span>Fork 项目 v1.7.1</span>
+                 <span>Fork 项目 v1.8</span>
                </a>
             </div>
         </div>
